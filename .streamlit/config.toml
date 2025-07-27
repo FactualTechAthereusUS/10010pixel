@@ -1,17 +1,13 @@
 [server]
+port = 8501
+address = "0.0.0.0"
 headless = true
 enableCORS = false
 enableXsrfProtection = false
-port = 8501
-fileWatcherType = "none"
 maxUploadSize = 200
 
 [browser]
 gatherUsageStats = false
-serverAddress = "0.0.0.0"
 
 [theme]
-primaryColor = "#FF6B6B"
-backgroundColor = "#000000"
-secondaryBackgroundColor = "#1E1E1E"
-textColor = "#FFFFFF" 
+base = "dark" 
