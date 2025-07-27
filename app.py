@@ -110,16 +110,35 @@ st.markdown("""
     
     /* General UI improvements */
     .stSelectbox > div > div {
-        background-color: white;
+        background-color: #2a2a2a !important;
+        color: white !important;
         border-radius: 6px;
+        border: 1px solid #444444 !important;
+    }
+    
+    .stSelectbox label {
+        color: #ffffff !important;
     }
     
     .stFileUploader > div {
-        background-color: rgb(248, 249, 251);
-        border: 2px dashed rgb(200, 208, 218);
+        background-color: #1a1a1a !important;
+        border: 2px dashed #444444 !important;
         border-radius: 8px;
         padding: 2rem;
         text-align: center;
+    }
+    
+    .stFileUploader > div > div {
+        background-color: #1a1a1a !important;
+        color: #ffffff !important;
+    }
+    
+    .stFileUploader label {
+        color: #ffffff !important;
+    }
+    
+    .stFileUploader p {
+        color: #bbbbbb !important;
     }
     
     /* Progress bar styling */
@@ -130,12 +149,20 @@ st.markdown("""
     
     /* Metrics container improvements */
     [data-testid="metric-container"] {
-        background-color: white;
-        border: 1px solid rgb(230, 234, 241);
+        background-color: #2a2a2a !important;
+        border: 1px solid #444444 !important;
         padding: 1rem;
         border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         margin: 0.5rem 0;
+    }
+    
+    [data-testid="metric-container"] > div {
+        color: #ffffff !important;
+    }
+    
+    [data-testid="metric-container"] label {
+        color: #bbbbbb !important;
     }
     
     /* Code blocks */
