@@ -16,6 +16,7 @@ import concurrent.futures
 import threading
 from typing import List, Tuple, Optional, Dict, Callable
 from datetime import datetime, timedelta
+import base64
 
 # Railway deployment compatibility
 def ensure_port_binding():
@@ -27,6 +28,80 @@ def ensure_port_binding():
 
 # Call port binding setup
 ensure_port_binding()
+
+# Mobile compatibility functions
+def is_mobile_browser():
+    """Detect if user is on mobile browser"""
+    try:
+        # Check user agent from Streamlit context (if available)
+        return False  # Default to desktop behavior for now
+    except:
+        return False
+
+def get_video_as_base64(video_path: str) -> Optional[str]:
+    """Convert video to base64 for mobile compatibility"""
+    try:
+        if not os.path.exists(video_path):
+            return None
+        
+        # Check file size (limit to 10MB for mobile)
+        file_size = os.path.getsize(video_path)
+        if file_size > 10 * 1024 * 1024:  # 10MB limit
+            return None
+            
+        with open(video_path, 'rb') as video_file:
+            video_bytes = video_file.read()
+            base64_encoded = base64.b64encode(video_bytes).decode('utf-8')
+            return base64_encoded
+    except Exception as e:
+        st.error(f"Error encoding video for mobile: {e}")
+        return None
+
+def display_mobile_compatible_video(video_path: str, title: str = "Video"):
+    """Display video with mobile browser compatibility"""
+    try:
+        if not os.path.exists(video_path):
+            st.warning(f"Video file not found: {os.path.basename(video_path)}")
+            return False
+        
+        # Get file size for display
+        file_size = os.path.getsize(video_path)
+        file_size_mb = file_size / (1024 * 1024)
+        
+        if file_size_mb > 20:  # If video is too large for mobile
+            st.warning(f"📱 **Mobile Note**: Video is {file_size_mb:.1f}MB - may not preview on mobile browsers")
+            st.info("💡 **Tip**: Download the video to view it locally on your device")
+            
+            # Still try to display for desktop users
+            with open(video_path, 'rb') as video_file:
+                video_bytes = video_file.read()
+            st.video(video_bytes, start_time=0)
+            return True
+        else:
+            # Normal video display for smaller files
+            with open(video_path, 'rb') as video_file:
+                video_bytes = video_file.read()
+            
+            # Add mobile-specific video container
+            st.markdown(f"""
+            <div style="
+                max-width: 100%;
+                border-radius: 8px;
+                overflow: hidden;
+                background: #1a1a1a;
+                padding: 4px;
+                margin: 8px 0;
+            ">
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.video(video_bytes, start_time=0)
+            return True
+            
+    except Exception as e:
+        st.error(f"Could not load video: {e}")
+        st.info("📱 **Mobile browsers** may have video playback limitations")
+        return False
 
 # Configure page
 st.set_page_config(
@@ -1272,6 +1347,22 @@ def main():
             st.markdown("### 🎬 Video Preview Comparison")
             st.markdown("*Visual confirmation that both videos look identical while having different digital fingerprints.*")
             
+            # Mobile-specific guidance
+            st.markdown("""
+            <div style="
+                background: #1e3a5f; 
+                border: 1px solid #2563eb; 
+                border-radius: 6px; 
+                padding: 12px 16px; 
+                margin: 16px 0; 
+                font-size: 13px;
+                color: #93c5fd;
+            ">
+                📱 <strong>Mobile Users:</strong> Video previews work best on smaller files (&lt;10MB). 
+                For larger videos or playback issues, use the download buttons below to view videos locally.
+            </div>
+            """, unsafe_allow_html=True)
+            
             # Add preview controls info
             with st.expander("ℹ️ Preview Controls", expanded=False):
                 st.markdown("""
@@ -1313,15 +1404,10 @@ def main():
                         original_video_path = input_path
                 
                 if original_video_path and original_video_path.exists():
-                    try:
-                        # Read video file and display with constrained size
-                        with open(original_video_path, 'rb') as video_file:
-                            video_bytes = video_file.read()
-                        
-                        # Use container with controlled height
-                        with st.container():
-                            st.video(video_bytes, start_time=0)
-                        
+                    # Use mobile-compatible video display
+                    success = display_mobile_compatible_video(str(original_video_path), "Original Video")
+                    
+                    if success:
                         # Show video info in a clean format
                         orig_stats = verification['original_stats']
                         info_col1, info_col2, info_col3 = st.columns(3)
@@ -1331,9 +1417,6 @@ def main():
                             st.caption(f"⏱️ {orig_stats['duration']:.1f}s")
                         with info_col3:
                             st.caption(f"🎞️ {orig_stats['frame_count']} frames")
-                    except Exception as e:
-                        st.error(f"Could not load original video: {e}")
-                        st.info("Video file may be corrupted or in an unsupported format.")
                 else:
                     st.warning("Original video not found for preview.")
                     st.info("Upload the video through the interface for preview functionality.")
@@ -1345,15 +1428,10 @@ def main():
                     output_path = Path("output") / verification['processed_name']
                     
                     if output_path.exists():
-                        try:
-                            # Read and display processed video with constrained size
-                            with open(output_path, 'rb') as video_file:
-                                video_bytes = video_file.read()
-                            
-                            # Use container with controlled height
-                            with st.container():
-                                st.video(video_bytes, start_time=0)
-                            
+                        # Use mobile-compatible video display
+                        success = display_mobile_compatible_video(str(output_path), "Processed Video")
+                        
+                        if success:
                             # Show video info with differences in clean format
                             proc_stats = verification['processed_stats']
                             orig_stats = verification['original_stats']
@@ -1384,10 +1462,6 @@ def main():
                                     st.caption(f"⏱️ {proc_stats['duration']:.1f}s")
                                 with info_col3:
                                     st.caption(f"🎞️ {proc_stats['frame_count']} frames")
-                        
-                        except Exception as e:
-                            st.error(f"Could not load processed video: {e}")
-                            st.info("Video file may be corrupted or processing failed.")
                     else:
                         st.error("Processed video not found.")
                 
