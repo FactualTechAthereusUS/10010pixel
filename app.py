@@ -29,6 +29,64 @@ def ensure_port_binding():
 # Call port binding setup
 ensure_port_binding()
 
+# Add upload validation and error handling
+def validate_upload_file(uploaded_file) -> tuple[bool, str]:
+    """Validate uploaded file before processing"""
+    try:
+        # Check file size (Railway-friendly limits)
+        max_size_mb = 100  # Conservative limit for Railway
+        file_size_mb = uploaded_file.size / (1024 * 1024)
+        
+        if file_size_mb > max_size_mb:
+            return False, f"File too large ({file_size_mb:.1f}MB). Maximum: {max_size_mb}MB"
+        
+        # Check file type
+        valid_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.mpeg4']
+        file_extension = Path(uploaded_file.name).suffix.lower()
+        
+        if file_extension not in valid_extensions:
+            return False, f"Unsupported file type: {file_extension}"
+        
+        # Basic file integrity check
+        if uploaded_file.size < 1024:  # Less than 1KB
+            return False, "File appears to be empty or corrupted"
+            
+        return True, "File validation passed"
+        
+    except Exception as e:
+        return False, f"Validation error: {str(e)}"
+
+def safe_file_write(uploaded_file, target_path: Path) -> tuple[bool, str]:
+    """Safely write uploaded file with error handling"""
+    try:
+        # Create parent directory if needed
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write file in chunks to avoid memory issues
+        chunk_size = 1024 * 1024  # 1MB chunks
+        
+        with open(target_path, "wb") as f:
+            uploaded_file.seek(0)  # Reset file pointer
+            
+            while True:
+                chunk = uploaded_file.read(chunk_size)
+                if not chunk:
+                    break
+                f.write(chunk)
+                
+        # Verify file was written correctly
+        if not target_path.exists() or target_path.stat().st_size == 0:
+            return False, "File write verification failed"
+            
+        return True, "File written successfully"
+        
+    except MemoryError:
+        return False, "Not enough memory to process this file"
+    except OSError as e:
+        return False, f"File system error: {str(e)}"
+    except Exception as e:
+        return False, f"Unexpected error during file write: {str(e)}"
+
 # Mobile compatibility functions
 def is_mobile_browser():
     """Detect if user is on mobile browser"""
@@ -407,10 +465,13 @@ class VideoProcessor:
         
         # Detect hardware acceleration capabilities
         self.hardware_encoder = self._detect_hardware_encoder()
-        self.max_threads = min(8, (os.cpu_count() or 4))  # Limit threads for stability
+        self.max_threads = min(4, (os.cpu_count() or 2))  # Reduced threads for Railway memory limits
         
         # Color preservation system
         self.color_properties_cache = {}
+        
+        # Memory management
+        self._cleanup_temp_files_on_startup()
     
     def _detect_hardware_encoder(self) -> str:
         """Detect the best available hardware encoder for the current system"""
@@ -434,6 +495,21 @@ class VideoProcessor:
             for file_path in self.temp_dir.glob("verification_*"):
                 if current_time - file_path.stat().st_mtime > 3600:  # 1 hour
                     file_path.unlink()
+        except Exception:
+            pass  # Ignore cleanup errors
+    
+    def _cleanup_temp_files_on_startup(self):
+        """Clean up temporary files on startup to free memory"""
+        try:
+            current_time = time.time()
+            # Clean up temp files older than 30 minutes
+            for pattern in ["temp_video_only_*", "step*_*", "input_*"]:
+                for file_path in self.temp_dir.glob(pattern):
+                    try:
+                        if current_time - file_path.stat().st_mtime > 1800:  # 30 minutes
+                            file_path.unlink()
+                    except Exception:
+                        continue  # Skip files that can't be deleted
         except Exception:
             pass  # Ignore cleanup errors
     
@@ -502,7 +578,7 @@ class VideoProcessor:
         return processed_frames
     
     def add_pixel_noise(self, input_path: str, output_path: str, noise_intensity: int = 2, progress_callback: Optional[Callable] = None) -> bool:
-        """Add invisible pixel noise using optimized vectorized operations with progress tracking and AUDIO PRESERVATION"""
+        """Add invisible pixel noise using memory-optimized operations with progress tracking and AUDIO PRESERVATION"""
         try:
             cap = cv2.VideoCapture(input_path)
             
@@ -512,6 +588,15 @@ class VideoProcessor:
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             
+            # Memory safety check - skip if video is too large for current resources
+            estimated_memory_mb = (width * height * 3 * 30) / (1024 * 1024)  # 30 frames in memory
+            if estimated_memory_mb > 500:  # 500MB limit
+                st.warning(f"Video too large for pixel noise processing ({estimated_memory_mb:.0f}MB estimated). Skipping this step.")
+                # Just copy the file instead
+                import shutil
+                shutil.copy2(input_path, output_path)
+                return True
+            
             # Create temporary video-only file for OpenCV processing
             temp_video_only = str(self.temp_dir / f"temp_video_only_{int(time.time())}.mp4")
             
@@ -519,12 +604,17 @@ class VideoProcessor:
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(temp_video_only, fourcc, fps, (width, height))
             
-            # Process frames in batches for speed
-            batch_size = min(30, max(10, self.max_threads * 2))  # Adaptive batch size
+            if not out.isOpened():
+                st.error("Failed to open video writer for pixel noise processing")
+                return False
+            
+            # Process frames in smaller batches for memory efficiency
+            batch_size = min(10, max(5, self.max_threads))  # Smaller batches for memory safety
             frame_batch = []
             frames_processed = 0
             
-            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_threads) as executor:
+            # Process without thread pool to reduce memory overhead
+            try:
                 while True:
                     ret, frame = cap.read()
                     if not ret:
@@ -534,11 +624,10 @@ class VideoProcessor:
                     
                     # Process batch when full or at end
                     if len(frame_batch) >= batch_size:
-                        # Submit batch for parallel processing
-                        future = executor.submit(self._process_frame_batch, frame_batch, noise_intensity)
-                        processed_frames = future.result()
+                        # Process batch directly (no threading for memory safety)
+                        processed_frames = self._process_frame_batch(frame_batch, noise_intensity)
                         
-                        # Write processed frames
+                        # Write processed frames immediately
                         for processed_frame in processed_frames:
                             out.write(processed_frame)
                         
@@ -549,7 +638,8 @@ class VideoProcessor:
                             progress = min(frames_processed / total_frames, 1.0)
                             progress_callback(min(progress, 1.0))
                         
-                        frame_batch = []
+                        # Clear batch to free memory
+                        frame_batch.clear()
                 
                 # Process remaining frames
                 if frame_batch:
@@ -561,7 +651,13 @@ class VideoProcessor:
                     
                     # Final progress update
                     if progress_callback:
-                        progress_callback(min(1.0, 1.0))
+                        progress_callback(1.0)
+                        
+            except MemoryError:
+                st.error("Not enough memory to process this video. Try a smaller file or disable pixel noise.")
+                cap.release()
+                out.release()
+                return False
             
             cap.release()
             out.release()
@@ -578,7 +674,7 @@ class VideoProcessor:
                 '-y', output_path
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # 5 minute timeout
             
             # Clean up temporary file
             if os.path.exists(temp_video_only):
@@ -586,6 +682,9 @@ class VideoProcessor:
             
             return result.returncode == 0
             
+        except subprocess.TimeoutExpired:
+            st.error("Video processing timed out. Try a smaller file.")
+            return False
         except Exception as e:
             st.error(f"Pixel noise addition failed: {e}")
             return False
@@ -635,38 +734,60 @@ class VideoProcessor:
                 # Get total duration for progress calculation
                 duration_cmd = ['ffprobe', '-v', 'quiet', '-show_entries', 'format=duration', 
                                '-of', 'csv=p=0', input_path]
-                duration_result = subprocess.run(duration_cmd, capture_output=True, text=True)
+                duration_result = subprocess.run(duration_cmd, capture_output=True, text=True, timeout=30)
                 total_duration = float(duration_result.stdout.strip()) if duration_result.stdout.strip() else 0
                 
-                # Run FFmpeg with progress monitoring
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
-                                         text=True, universal_newlines=True)
-                
-                while True:
-                    line = process.stdout.readline()
-                    if not line:
-                        break
+                # Run FFmpeg with progress monitoring and timeout
+                try:
+                    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+                                             text=True, universal_newlines=True)
                     
-                    # Parse progress from FFmpeg output
-                    if 'out_time_ms=' in line:
-                        try:
-                            time_ms = int(line.split('out_time_ms=')[1].split()[0])
-                            current_duration = time_ms / 1000000  # Convert microseconds to seconds
-                            if total_duration > 0:
-                                progress = min(current_duration / total_duration, 1.0)
-                                progress_callback(progress)
-                        except:
-                            pass
-                
-                process.wait()
-                
-                # Final progress update
-                progress_callback(1.0)
-                return process.returncode == 0
+                    start_time = time.time()
+                    timeout_seconds = 600  # 10 minute timeout for re-encoding
+                    
+                    while True:
+                        # Check for timeout
+                        if time.time() - start_time > timeout_seconds:
+                            process.terminate()
+                            try:
+                                process.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                            st.error("Re-encoding timed out. Try a smaller file or lower quality settings.")
+                            return False
+                        
+                        line = process.stdout.readline()
+                        if not line:
+                            break
+                        
+                        # Parse progress from FFmpeg output
+                        if 'out_time_ms=' in line:
+                            try:
+                                time_ms = int(line.split('out_time_ms=')[1].split()[0])
+                                current_duration = time_ms / 1000000  # Convert microseconds to seconds
+                                if total_duration > 0:
+                                    progress = min(current_duration / total_duration, 1.0)
+                                    progress_callback(progress)
+                            except:
+                                pass
+                    
+                    process.wait()
+                    
+                    # Final progress update
+                    progress_callback(1.0)
+                    return process.returncode == 0
+                    
+                except Exception as e:
+                    st.error(f"Re-encoding process error: {e}")
+                    return False
             else:
-                # Simple execution without progress tracking
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                return result.returncode == 0
+                # Simple execution without progress tracking but with timeout
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)  # 10 minute timeout
+                    return result.returncode == 0
+                except subprocess.TimeoutExpired:
+                    st.error("Re-encoding timed out. Try a smaller file.")
+                    return False
                 
         except Exception as e:
             st.error(f"Re-encoding failed: {e}")
@@ -1062,6 +1183,9 @@ def main():
     st.title("🎬 TikTok Video Processor")
     st.markdown("Create unique digital fingerprints to avoid duplicate content detection")
     
+    # Show upload limits and system info
+    st.info("📋 **Upload Limits**: Max 100MB per file | Supported: MP4, AVI, MOV, MKV, WEBM | Optimized for Railway deployment")
+    
     processor = VideoProcessor()
     
     # Terminal-style system status
@@ -1156,6 +1280,28 @@ def main():
                 st.caption("Upload videos to see statistics")
     
     if uploaded_files and st.button("🚀 Start Processing", type="primary", use_container_width=True):
+        # Validate all files first
+        validation_errors = []
+        valid_files = []
+        
+        for uploaded_file in uploaded_files:
+            is_valid, message = validate_upload_file(uploaded_file)
+            if is_valid:
+                valid_files.append(uploaded_file)
+            else:
+                validation_errors.append(f"❌ **{uploaded_file.name}**: {message}")
+        
+        # Show validation errors if any
+        if validation_errors:
+            st.error("**Upload Validation Failed:**")
+            for error in validation_errors:
+                st.error(error)
+            
+            if not valid_files:
+                st.stop()  # Stop execution if no valid files
+            else:
+                st.warning(f"Proceeding with {len(valid_files)} valid files out of {len(uploaded_files)} uploaded.")
+        
         # Create processing UI elements
         overall_progress = st.progress(0)
         file_progress = st.progress(0)
@@ -1173,26 +1319,34 @@ def main():
         results = []
         start_time = time.time()
         
-        for i, uploaded_file in enumerate(uploaded_files):
-            # Save uploaded file temporarily
-            temp_input = processor.temp_dir / f"input_{uploaded_file.name}"
-            with open(temp_input, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            
-            # Also save a copy for verification (with timestamp to avoid conflicts)
-            current_timestamp = int(time.time())
-            verification_input = processor.temp_dir / f"verification_{current_timestamp}_{uploaded_file.name}"
-            with open(verification_input, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            
-            # Store this session's verification mapping for accurate tracking
-            if 'current_session_inputs' not in st.session_state:
-                st.session_state.current_session_inputs = []
-            st.session_state.current_session_inputs.append({
-                'timestamp': current_timestamp,
-                'filename': uploaded_file.name,
-                'verification_path': str(verification_input)
-            })
+        for i, uploaded_file in enumerate(valid_files):
+            try:
+                # Save uploaded file temporarily with safe writing
+                temp_input = processor.temp_dir / f"input_{uploaded_file.name}"
+                write_success, write_message = safe_file_write(uploaded_file, temp_input)
+                
+                if not write_success:
+                    results.append(f"❌ {uploaded_file.name}: Upload failed - {write_message}")
+                    continue
+                
+                # Also save a copy for verification (with timestamp to avoid conflicts)
+                current_timestamp = int(time.time())
+                verification_input = processor.temp_dir / f"verification_{current_timestamp}_{uploaded_file.name}"
+                write_success_verification, _ = safe_file_write(uploaded_file, verification_input)
+                
+                if write_success_verification:
+                    # Store this session's verification mapping for accurate tracking
+                    if 'current_session_inputs' not in st.session_state:
+                        st.session_state.current_session_inputs = []
+                    st.session_state.current_session_inputs.append({
+                        'timestamp': current_timestamp,
+                        'filename': uploaded_file.name,
+                        'verification_path': str(verification_input)
+                    })
+                
+            except Exception as e:
+                results.append(f"❌ {uploaded_file.name}: Upload error - {str(e)}")
+                continue
             
             # Progress callback for individual video processing
             def update_processing_progress(step_name: str, percentage: float, current_step: int, total_steps: int):
@@ -1201,7 +1355,7 @@ def main():
                 timer_placeholder.metric(
                     "⏱️ Processing Time", 
                     f"{elapsed_time:.1f}s",
-                    f"File {i+1}/{len(uploaded_files)}"
+                    f"File {i+1}/{len(valid_files)}"
                 )
                 
                 # Update current file progress
@@ -1210,7 +1364,7 @@ def main():
                 # Update overall progress
                 files_completed = i
                 current_file_progress = percentage / 100.0
-                overall_progress_value = min((files_completed + current_file_progress) / len(uploaded_files), 1.0)
+                overall_progress_value = min((files_completed + current_file_progress) / len(valid_files), 1.0)
                 overall_progress.progress(overall_progress_value)
                 
                 # Update status
@@ -1220,7 +1374,7 @@ def main():
                 with details_placeholder.container():
                     detail_col1, detail_col2, detail_col3 = st.columns(3)
                     with detail_col1:
-                        st.metric("📊 Overall Progress", f"{overall_progress_value*100:.1f}%", f"{files_completed}/{len(uploaded_files)} completed")
+                        st.metric("📊 Overall Progress", f"{overall_progress_value*100:.1f}%", f"{files_completed}/{len(valid_files)} completed")
                     with detail_col2:
                         st.metric("🎯 Current File", f"{percentage:.1f}%", f"Step {current_step}/{total_steps}")
                     with detail_col3:
@@ -1233,21 +1387,31 @@ def main():
                         else:
                             st.metric("⏳ Est. Remaining", "Calculating...", "Please wait")
             
-            # Process the video with real-time progress
-            success, message = processor.process_video(
-                str(temp_input), 
-                options, 
-                progress_callback=update_processing_progress
-            )
-            results.append(message)
+            # Process the video with real-time progress and timeout protection
+            try:
+                success, message = processor.process_video(
+                    str(temp_input), 
+                    options, 
+                    progress_callback=update_processing_progress
+                )
+                results.append(message)
+                
+            except Exception as e:
+                error_msg = f"❌ {uploaded_file.name}: Processing failed - {str(e)}"
+                results.append(error_msg)
+                st.error(error_msg)
+                success = False
             
             # Update overall progress for completed file
-            overall_progress.progress(min((i + 1) / len(uploaded_files), 1.0))
+            overall_progress.progress(min((i + 1) / len(valid_files), 1.0))
             file_progress.progress(1.0)
             
             # Clean up temp input (keep verification copy)
-            if temp_input.exists():
-                temp_input.unlink()
+            try:
+                if temp_input.exists():
+                    temp_input.unlink()
+            except Exception:
+                pass  # Ignore cleanup errors
         
         # Final status update
         total_time = time.time() - start_time
@@ -1271,16 +1435,16 @@ def main():
             st.success(f"🎉 {len(output_files)} videos processed successfully!")
             st.info(f"📁 Output files saved to: `{processor.output_dir.absolute()}`")
             
-            # Show processing statistics
-            with st.expander("📈 Processing Statistics", expanded=False):
-                stat_col1, stat_col2, stat_col3 = st.columns(3)
-                with stat_col1:
-                    st.metric("⏱️ Total Processing Time", f"{total_time:.1f} seconds")
-                with stat_col2:
-                    st.metric("📹 Videos Processed", len(uploaded_files))
-                with stat_col3:
-                    avg_time = total_time / len(uploaded_files) if uploaded_files else 0
-                    st.metric("⚡ Average Time per Video", f"{avg_time:.1f}s")
+                    # Show processing statistics
+        with st.expander("📈 Processing Statistics", expanded=False):
+            stat_col1, stat_col2, stat_col3 = st.columns(3)
+            with stat_col1:
+                st.metric("⏱️ Total Processing Time", f"{total_time:.1f} seconds")
+            with stat_col2:
+                st.metric("📹 Videos Processed", len(valid_files))
+            with stat_col3:
+                avg_time = total_time / len(valid_files) if valid_files else 0
+                st.metric("⚡ Average Time per Video", f"{avg_time:.1f}s")
     
     # Video Verification Section
     st.header("🔍 Video Verification Terminal")
