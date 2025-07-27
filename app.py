@@ -256,6 +256,21 @@ st.markdown("""
         border-left: 3px solid #FF6B6B;
     }
     
+    /* Terminal-style elements */
+    .terminal-status {
+        font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace !important;
+        background: #0d1117 !important;
+        border: 1px solid #30363d !important;
+        color: #7d8590 !important;
+        font-size: 13px !important;
+        line-height: 1.4 !important;
+    }
+    
+    /* Terminal text colors */
+    .terminal-green { color: #39d353 !important; }
+    .terminal-blue { color: #58a6ff !important; }
+    .terminal-white { color: #f0f6fc !important; }
+    
     /* Responsive text sizes */
     @media (max-width: 768px) {
         h2 {
@@ -963,25 +978,28 @@ def main():
     
     processor = VideoProcessor()
     
-    # Show performance optimizations status
-    perf_col1, perf_col2, perf_col3 = st.columns(3)
-    with perf_col1:
-        if processor.hardware_encoder == 'h264_videotoolbox':
-            st.success("🚀 Hardware Acceleration: ON")
-            st.caption("Using Mac VideoToolbox (3-5x faster)")
-        else:
-            st.info("⚡ Hardware Acceleration: Software")
-            st.caption("Using optimized CPU encoding")
+    # Terminal-style system status
+    hw_status = "VideoToolbox" if processor.hardware_encoder == 'h264_videotoolbox' else "Software"
+    hw_speed = "3-5x faster" if processor.hardware_encoder == 'h264_videotoolbox' else "CPU optimized"
     
-    with perf_col2:
-        st.success(f"🧵 Multi-threading: {processor.max_threads} cores")
-        st.caption("Parallel processing enabled")
-    
-    with perf_col3:
-        st.success("🎨 Color Preservation: ON")
-        st.caption("Perfect color grading maintained")
-    
-    st.markdown("---")
+    st.markdown(f"""
+    <div style="
+        background: #0d1117; 
+        border: 1px solid #30363d; 
+        border-radius: 6px; 
+        padding: 12px 16px; 
+        margin: 20px 0; 
+        font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+        font-size: 13px;
+        color: #7d8590;
+        line-height: 1.4;
+    ">
+        <span style="color: #39d353;">●</span> <strong style="color: #f0f6fc;">SYSTEM STATUS</strong><br/>
+        <span style="color: #58a6ff;">HW_ACCEL:</span> {hw_status} ({hw_speed}) | 
+        <span style="color: #58a6ff;">THREADS:</span> {processor.max_threads} cores | 
+        <span style="color: #58a6ff;">COLOR_PRESERVE:</span> ON
+    </div>
+    """, unsafe_allow_html=True)
     
     # Sidebar for processing options
     st.sidebar.header("Processing Options")
@@ -1341,13 +1359,22 @@ def main():
                         st.error("Processed video not found.")
                 
                 # Visual comparison note and quality assessment
-                with st.container():
-                    st.markdown("""
-                    <div class="comparison-section">
-                        <h4>👀 Visual Quality Check</h4>
-                        <p>Both videos should look <strong>identical to the human eye</strong>, but have completely different digital fingerprints (hashes) for bypass detection.</p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                        st.markdown("""
+        <div style="
+            background: #0d1117; 
+            border: 1px solid #30363d; 
+            border-radius: 6px; 
+            padding: 12px 16px; 
+            margin: 16px 0; 
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+            font-size: 13px;
+            color: #7d8590;
+        ">
+            <span style="color: #39d353;">●</span> <strong style="color: #f0f6fc;">VISUAL_CHECK:</strong> 
+            Videos appear <span style="color: #58a6ff;">identical</span> to human eye but have 
+            <span style="color: #58a6ff;">different</span> digital fingerprints (bypass detection)
+        </div>
+        """, unsafe_allow_html=True)
                 
                 # Quality Assessment
                 if original_video_path and original_video_path.exists() and output_path.exists():
