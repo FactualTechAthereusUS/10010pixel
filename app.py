@@ -1200,6 +1200,12 @@ def main():
     st.header("🔍 Video Verification Terminal")
     st.markdown("Verify that your processed videos have unique digital fingerprints.")
     
+    # Initialize session state for verification
+    if 'verification_results' not in st.session_state:
+        st.session_state.verification_results = None
+    if 'show_verification' not in st.session_state:
+        st.session_state.show_verification = False
+    
     if is_mobile:
         # Mobile layout for verification
         st.markdown("**Check if processing successfully modified your videos:**")
@@ -1214,96 +1220,112 @@ def main():
         with verification_col2:
             verify_button = st.button("🧪 Verify Changes", type="secondary", use_container_width=True)
     
+    # Handle verification button click
     if verify_button:
+        st.session_state.show_verification = True
         with st.spinner("🔍 Analyzing video changes..."):
-            verification = VideoVerifier.auto_verify_last_processed(processor)
+            st.session_state.verification_results = VideoVerifier.auto_verify_last_processed(processor)
+    
+    # Show verification results if they exist
+    if st.session_state.show_verification and st.session_state.verification_results:
+        verification = st.session_state.verification_results
+        
+        # Add a clear button to reset verification
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            pass  # Empty column for spacing
+        with col2:
+            if st.button("🗑️ Clear Results", type="secondary", help="Clear verification results"):
+                st.session_state.show_verification = False
+                st.session_state.verification_results = None
+                st.rerun()
+        
+        # Show warning if verification might be inaccurate
+        if verification and 'verification_warning' in verification:
+            st.warning(f"⚠️ {verification['verification_warning']}")
+            st.info("💡 For accurate verification, upload videos through the interface above before processing.")
+        
+        if verification:
+            # Display terminal-like verification results
+            st.markdown("### 📊 VERIFICATION RESULTS")
+            st.markdown("---")
             
-            # Show warning if verification might be inaccurate
-            if verification and 'verification_warning' in verification:
-                st.warning(f"⚠️ {verification['verification_warning']}")
-                st.info("💡 For accurate verification, upload videos through the interface above before processing.")
+            # Comparison info
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"**📄 Original:** `{verification['original_name']}`")
+            with col2:
+                st.markdown(f"**⚡ Processed:** `{verification['processed_name']}`")
             
-            if verification:
-                # Display terminal-like verification results
-                st.markdown("### 📊 VERIFICATION RESULTS")
-                st.markdown("---")
-                
-                # Comparison info
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown(f"**📄 Original:** `{verification['original_name']}`")
-                with col2:
-                    st.markdown(f"**⚡ Processed:** `{verification['processed_name']}`")
-                
-                # Video Preview Section
-                st.markdown("### 🎬 Video Preview Comparison")
-                st.markdown("*Visual confirmation that both videos look identical while having different digital fingerprints.*")
-                
-                # Add preview controls info
-                with st.expander("ℹ️ Preview Controls", expanded=False):
-                    st.markdown("""
-                    **How to compare videos:**
-                    - 🎮 Use the play/pause controls on each video
-                    - 🔍 Watch the same moments in both videos to confirm identical appearance
-                    - 📊 Check the statistics below each video for technical differences
-                    - 🎯 Look for any visual artifacts (there should be none - pixel noise is imperceptible)
-                    """)
-                
-                st.markdown("---")
-                
-                # Responsive video preview layout with better sizing
-                if is_mobile:
-                    # Stack videos vertically on mobile with controlled sizing
+            # Video Preview Section
+            st.markdown("### 🎬 Video Preview Comparison")
+            st.markdown("*Visual confirmation that both videos look identical while having different digital fingerprints.*")
+            
+            # Add preview controls info
+            with st.expander("ℹ️ Preview Controls", expanded=False):
+                st.markdown("""
+                **How to compare videos:**
+                - 🎮 Use the play/pause controls on each video
+                - 🔍 Watch the same moments in both videos to confirm identical appearance
+                - 📊 Check the statistics below each video for technical differences
+                - 🎯 Look for any visual artifacts (there should be none - pixel noise is imperceptible)
+                """)
+            
+            st.markdown("---")
+            
+            # Responsive video preview layout with better sizing
+            if is_mobile:
+                # Stack videos vertically on mobile with controlled sizing
+                st.markdown("**📥 Original Video**")
+                preview_col1 = st.container()
+                st.markdown("**⚡ Processed Video**") 
+                preview_col2 = st.container()
+            else:
+                # Side-by-side on desktop with proper column sizing
+                preview_col1, preview_col2 = st.columns([1, 1], gap="medium")
+            
+            with preview_col1:
+                if not is_mobile:
                     st.markdown("**📥 Original Video**")
-                    preview_col1 = st.container()
-                    st.markdown("**⚡ Processed Video**") 
-                    preview_col2 = st.container()
-                else:
-                    # Side-by-side on desktop with proper column sizing
-                    preview_col1, preview_col2 = st.columns([1, 1], gap="medium")
+                # Find and display original video
+                original_video_path = None
                 
-                with preview_col1:
-                    if not is_mobile:
-                        st.markdown("**📥 Original Video**")
-                    # Find and display original video
-                    original_video_path = None
-                    
-                    # Check temp verification files first
-                    temp_dir = Path("temp")
-                    verification_files = list(temp_dir.glob(f"verification_*{verification['original_name']}"))
-                    if verification_files and verification_files[0].exists():
-                        original_video_path = verification_files[0]
-                    else:
-                        # Fallback to input directory
-                        input_path = Path("input") / verification['original_name']
-                        if input_path.exists():
-                            original_video_path = input_path
-                    
-                    if original_video_path and original_video_path.exists():
-                        try:
-                            # Read video file and display with constrained size
-                            with open(original_video_path, 'rb') as video_file:
-                                video_bytes = video_file.read()
-                            
-                            # Use container with controlled height
-                            with st.container():
-                                st.video(video_bytes, start_time=0)
-                            
-                            # Show video info in a clean format
-                            orig_stats = verification['original_stats']
-                            info_col1, info_col2, info_col3 = st.columns(3)
-                            with info_col1:
-                                st.caption(f"📐 {orig_stats['width']}x{orig_stats['height']}")
-                            with info_col2:
-                                st.caption(f"⏱️ {orig_stats['duration']:.1f}s")
-                            with info_col3:
-                                st.caption(f"🎞️ {orig_stats['frame_count']} frames")
-                        except Exception as e:
-                            st.error(f"Could not load original video: {e}")
-                            st.info("Video file may be corrupted or in an unsupported format.")
-                    else:
-                        st.warning("Original video not found for preview.")
-                        st.info("Upload the video through the interface for preview functionality.")
+                # Check temp verification files first
+                temp_dir = Path("temp")
+                verification_files = list(temp_dir.glob(f"verification_*{verification['original_name']}"))
+                if verification_files and verification_files[0].exists():
+                    original_video_path = verification_files[0]
+                else:
+                    # Fallback to input directory
+                    input_path = Path("input") / verification['original_name']
+                    if input_path.exists():
+                        original_video_path = input_path
+                
+                if original_video_path and original_video_path.exists():
+                    try:
+                        # Read video file and display with constrained size
+                        with open(original_video_path, 'rb') as video_file:
+                            video_bytes = video_file.read()
+                        
+                        # Use container with controlled height
+                        with st.container():
+                            st.video(video_bytes, start_time=0)
+                        
+                        # Show video info in a clean format
+                        orig_stats = verification['original_stats']
+                        info_col1, info_col2, info_col3 = st.columns(3)
+                        with info_col1:
+                            st.caption(f"📐 {orig_stats['width']}x{orig_stats['height']}")
+                        with info_col2:
+                            st.caption(f"⏱️ {orig_stats['duration']:.1f}s")
+                        with info_col3:
+                            st.caption(f"🎞️ {orig_stats['frame_count']} frames")
+                    except Exception as e:
+                        st.error(f"Could not load original video: {e}")
+                        st.info("Video file may be corrupted or in an unsupported format.")
+                else:
+                    st.warning("Original video not found for preview.")
+                    st.info("Upload the video through the interface for preview functionality.")
                 
                 with preview_col2:
                     if not is_mobile:
@@ -1351,7 +1373,7 @@ def main():
                                     st.caption(f"⏱️ {proc_stats['duration']:.1f}s")
                                 with info_col3:
                                     st.caption(f"🎞️ {proc_stats['frame_count']} frames")
-                            
+                        
                         except Exception as e:
                             st.error(f"Could not load processed video: {e}")
                             st.info("Video file may be corrupted or processing failed.")
@@ -1359,22 +1381,22 @@ def main():
                         st.error("Processed video not found.")
                 
                 # Visual comparison note and quality assessment
-                        st.markdown("""
-        <div style="
-            background: #0d1117; 
-            border: 1px solid #30363d; 
-            border-radius: 6px; 
-            padding: 12px 16px; 
-            margin: 16px 0; 
-            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-            font-size: 13px;
-            color: #7d8590;
-        ">
-            <span style="color: #39d353;">●</span> <strong style="color: #f0f6fc;">VISUAL_CHECK:</strong> 
-            Videos appear <span style="color: #58a6ff;">identical</span> to human eye but have 
-            <span style="color: #58a6ff;">different</span> digital fingerprints (bypass detection)
-        </div>
-        """, unsafe_allow_html=True)
+                st.markdown("""
+<div style="
+    background: #0d1117; 
+    border: 1px solid #30363d; 
+    border-radius: 6px; 
+    padding: 12px 16px; 
+    margin: 16px 0; 
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: 13px;
+    color: #7d8590;
+">
+    <span style="color: #39d353;">●</span> <strong style="color: #f0f6fc;">VISUAL_CHECK:</strong> 
+    Videos appear <span style="color: #58a6ff;">identical</span> to human eye but have 
+    <span style="color: #58a6ff;">different</span> digital fingerprints (bypass detection)
+</div>
+""", unsafe_allow_html=True)
                 
                 # Quality Assessment
                 if original_video_path and original_video_path.exists() and output_path.exists():
@@ -1425,8 +1447,12 @@ def main():
                                 help="Could not calculate size difference"
                             )
                 
-                # Download Section
+                # Download Section - This is where the issue was happening
                 st.markdown("### 📥 Download Videos")
+                
+                # Add a note about download behavior
+                st.info("💡 **Download Tip:** After clicking download, the verification results will remain visible. Use the 'Clear Results' button above if you want to hide them.")
+                
                 if is_mobile:
                     # Stack download buttons vertically on mobile
                     download_col1 = st.container()
@@ -1440,12 +1466,14 @@ def main():
                         try:
                             with open(original_video_path, 'rb') as f:
                                 original_data = f.read()
+                            # Use a unique key to prevent conflicts
                             st.download_button(
                                 label="📥 Download Original",
                                 data=original_data,
                                 file_name=f"original_{verification['original_name']}",
                                 mime="video/mp4",
-                                use_container_width=True
+                                use_container_width=True,
+                                key="download_original"
                             )
                         except:
                             st.button("📥 Download Original", disabled=True, use_container_width=True)
@@ -1459,12 +1487,14 @@ def main():
                         try:
                             with open(output_path, 'rb') as f:
                                 processed_data = f.read()
+                            # Use a unique key to prevent conflicts
                             st.download_button(
                                 label="⚡ Download Processed",
                                 data=processed_data,
                                 file_name=verification['processed_name'],
                                 mime="video/mp4",
-                                use_container_width=True
+                                use_container_width=True,
+                                key="download_processed"
                             )
                         except:
                             st.button("⚡ Download Processed", disabled=True, use_container_width=True)
@@ -1841,26 +1871,26 @@ python verify_changes.py --auto
 python verify_changes.py "input/{verification['original_name']}" "output/{verification['processed_name']}"
 """, language="bash")
                     
-            else:
-                st.warning("⚠️ **No videos found to verify!**")
-                st.info("Process some videos first, then click 'Verify Changes' to check if they were modified.")
+        else:
+            st.warning("⚠️ **No videos found to verify!**")
+            st.info("Process some videos first, then click 'Verify Changes' to check if they were modified.")
+            
+            # Help text
+            with st.expander("💡 How to Use Verification", expanded=True):
+                st.markdown("""
+                **Steps to verify your video processing:**
                 
-                # Help text
-                with st.expander("💡 How to Use Verification", expanded=True):
-                    st.markdown("""
-                    **Steps to verify your video processing:**
-                    
-                    1. **Upload** a video file using the file uploader above
-                    2. **Process** it by clicking "🚀 Start Processing" 
-                    3. **Verify** changes by clicking "🧪 Verify Changes"
-                    4. **Check results** - Look for ✅ YES indicators
-                    
-                    **What the verification checks:**
-                    - 🔐 **File Hash** - Unique digital fingerprint
-                    - 🎬 **Frame Changes** - Pixel noise applied
-                    - 📋 **Metadata** - Identifying info removed
-                    - ⏱️ **Duration/Resolution** - Should stay same (quality preserved)
-                    """)
+                1. **Upload** a video file using the file uploader above
+                2. **Process** it by clicking "🚀 Start Processing" 
+                3. **Verify** changes by clicking "🧪 Verify Changes"
+                4. **Check results** - Look for ✅ YES indicators
+                
+                **What the verification checks:**
+                - 🔐 **File Hash** - Unique digital fingerprint
+                - 🎬 **Frame Changes** - Pixel noise applied
+                - 📋 **Metadata** - Identifying info removed
+                - ⏱️ **Duration/Resolution** - Should stay same (quality preserved)
+                """)
     
     # Show existing output files
     if st.button("🔄 Refresh Output List"):
