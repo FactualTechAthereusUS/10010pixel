@@ -189,6 +189,46 @@ st.markdown("""
         margin: 0.5rem 0;
     }
     
+    /* RESPONSIVE VIDEO SIZING - Fix oversized videos */
+    .stVideo {
+        max-height: 350px !important;
+        width: 100% !important;
+    }
+    
+    .stVideo video {
+        max-height: 350px !important;
+        width: 100% !important;
+        object-fit: contain !important;
+        border-radius: 8px;
+    }
+    
+    /* Mobile video sizing */
+    @media (max-width: 768px) {
+        .stVideo {
+            max-height: 250px !important;
+        }
+        .stVideo video {
+            max-height: 250px !important;
+        }
+    }
+    
+    /* Verification section improvements */
+    .verification-container {
+        background: rgba(255,255,255,0.05);
+        border-radius: 12px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+    
+    /* Better spacing for comparison sections */
+    .comparison-section {
+        margin: 1rem 0;
+        padding: 1rem;
+        background: rgba(255,255,255,0.02);
+        border-radius: 8px;
+        border-left: 3px solid #FF6B6B;
+    }
+    
     /* Responsive text sizes */
     @media (max-width: 768px) {
         h2 {
@@ -1137,16 +1177,16 @@ def main():
                 
                 st.markdown("---")
                 
-                # Responsive video preview layout
+                # Responsive video preview layout with better sizing
                 if is_mobile:
-                    # Stack videos vertically on mobile
+                    # Stack videos vertically on mobile with controlled sizing
                     st.markdown("**📥 Original Video**")
                     preview_col1 = st.container()
                     st.markdown("**⚡ Processed Video**") 
                     preview_col2 = st.container()
                 else:
-                    # Side-by-side on desktop
-                    preview_col1, preview_col2 = st.columns(2)
+                    # Side-by-side on desktop with proper column sizing
+                    preview_col1, preview_col2 = st.columns([1, 1], gap="medium")
                 
                 with preview_col1:
                     if not is_mobile:
@@ -1167,14 +1207,23 @@ def main():
                     
                     if original_video_path and original_video_path.exists():
                         try:
-                            # Read video file and display
+                            # Read video file and display with constrained size
                             with open(original_video_path, 'rb') as video_file:
                                 video_bytes = video_file.read()
-                            st.video(video_bytes)
                             
-                            # Show video info
+                            # Use container with controlled height
+                            with st.container():
+                                st.video(video_bytes, start_time=0)
+                            
+                            # Show video info in a clean format
                             orig_stats = verification['original_stats']
-                            st.caption(f"📊 {orig_stats['width']}x{orig_stats['height']} • {orig_stats['duration']:.1f}s • {orig_stats['frame_count']} frames")
+                            info_col1, info_col2, info_col3 = st.columns(3)
+                            with info_col1:
+                                st.caption(f"📐 {orig_stats['width']}x{orig_stats['height']}")
+                            with info_col2:
+                                st.caption(f"⏱️ {orig_stats['duration']:.1f}s")
+                            with info_col3:
+                                st.caption(f"🎞️ {orig_stats['frame_count']} frames")
                         except Exception as e:
                             st.error(f"Could not load original video: {e}")
                             st.info("Video file may be corrupted or in an unsupported format.")
@@ -1190,12 +1239,15 @@ def main():
                     
                     if output_path.exists():
                         try:
-                            # Read and display processed video
+                            # Read and display processed video with constrained size
                             with open(output_path, 'rb') as video_file:
                                 video_bytes = video_file.read()
-                            st.video(video_bytes)
                             
-                            # Show video info with differences
+                            # Use container with controlled height
+                            with st.container():
+                                st.video(video_bytes, start_time=0)
+                            
+                            # Show video info with differences in clean format
                             proc_stats = verification['processed_stats']
                             orig_stats = verification['original_stats']
                             
@@ -1205,11 +1257,26 @@ def main():
                                 orig_size = original_video_path.stat().st_size
                                 size_diff = proc_size - orig_size
                                 size_pct = (size_diff / orig_size) * 100 if orig_size > 0 else 0
-                                size_info = f" ({size_diff:+,} bytes, {size_pct:+.1f}%)"
+                                
+                                # Show info in organized columns
+                                info_col1, info_col2, info_col3 = st.columns(3)
+                                with info_col1:
+                                    st.caption(f"📐 {proc_stats['width']}x{proc_stats['height']}")
+                                with info_col2:
+                                    st.caption(f"⏱️ {proc_stats['duration']:.1f}s")
+                                with info_col3:
+                                    if size_pct != 0:
+                                        st.caption(f"📦 {size_pct:+.1f}% size")
+                                    else:
+                                        st.caption(f"🎞️ {proc_stats['frame_count']} frames")
                             else:
-                                size_info = ""
-                            
-                            st.caption(f"📊 {proc_stats['width']}x{proc_stats['height']} • {proc_stats['duration']:.1f}s • {proc_stats['frame_count']} frames{size_info}")
+                                info_col1, info_col2, info_col3 = st.columns(3)
+                                with info_col1:
+                                    st.caption(f"📐 {proc_stats['width']}x{proc_stats['height']}")
+                                with info_col2:
+                                    st.caption(f"⏱️ {proc_stats['duration']:.1f}s")
+                                with info_col3:
+                                    st.caption(f"🎞️ {proc_stats['frame_count']} frames")
                             
                         except Exception as e:
                             st.error(f"Could not load processed video: {e}")
@@ -1218,7 +1285,13 @@ def main():
                         st.error("Processed video not found.")
                 
                 # Visual comparison note and quality assessment
-                st.info("👀 **Visual Check**: Both videos should look identical to the human eye, but have completely different digital fingerprints (hashes).")
+                with st.container():
+                    st.markdown("""
+                    <div class="comparison-section">
+                        <h4>👀 Visual Quality Check</h4>
+                        <p>Both videos should look <strong>identical to the human eye</strong>, but have completely different digital fingerprints (hashes) for bypass detection.</p>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
                 # Quality Assessment
                 if original_video_path and original_video_path.exists() and output_path.exists():
