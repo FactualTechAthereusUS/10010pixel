@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python311", "ffmpeg", "curl"]
+nixPkgs = ["python311", "ffmpeg"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
@@ -8,4 +8,4 @@ cmds = ["pip install -r requirements.txt"]
 cmds = ["mkdir -p input output temp .streamlit"]
 
 [start]
-cmd = "streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --server.enableCORS=false --server.enableXsrfProtection=false" 
+cmd = "python railway_start.py" 

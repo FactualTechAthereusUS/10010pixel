@@ -17,6 +17,17 @@ import threading
 from typing import List, Tuple, Optional, Dict, Callable
 from datetime import datetime, timedelta
 
+# Railway deployment compatibility
+def ensure_port_binding():
+    """Ensure proper port binding for Railway deployment"""
+    port = os.environ.get("PORT", "8501")
+    # Set Streamlit server configuration for Railway
+    os.environ["STREAMLIT_SERVER_PORT"] = port
+    os.environ["STREAMLIT_SERVER_ADDRESS"] = "0.0.0.0"
+
+# Call port binding setup
+ensure_port_binding()
+
 # Configure page
 st.set_page_config(
     page_title="AURA FARMING - Video Processor",
@@ -1817,7 +1828,7 @@ def main():
                 with st.expander("🔐 Complete Hash Comparison", expanded=False):
                     st.markdown("**Original File Hash (SHA256):**")
                     st.code(verification['original_hash'], language=None)
-                    st.markdown("**Processed File Hash (SHA256):**")  
+                    st.markdown("**Processed File Hash (SHA256):**")
                     st.code(verification['processed_hash'], language=None)
                     
                     # Show hash difference visually
