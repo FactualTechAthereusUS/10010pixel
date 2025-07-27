@@ -376,7 +376,7 @@ class VideoProcessor:
                         # Update progress
                         if progress_callback and total_frames > 0:
                             progress = min(frames_processed / total_frames, 1.0)
-                            progress_callback(progress)
+                            progress_callback(min(progress, 1.0))
                         
                         frame_batch = []
                 
@@ -390,7 +390,7 @@ class VideoProcessor:
                     
                     # Final progress update
                     if progress_callback:
-                        progress_callback(1.0)
+                        progress_callback(min(1.0, 1.0))
             
             cap.release()
             out.release()
@@ -993,7 +993,7 @@ def main():
                 # Update overall progress
                 files_completed = i
                 current_file_progress = percentage / 100.0
-                overall_progress_value = (files_completed + current_file_progress) / len(uploaded_files)
+                overall_progress_value = min((files_completed + current_file_progress) / len(uploaded_files), 1.0)
                 overall_progress.progress(overall_progress_value)
                 
                 # Update status
@@ -1025,7 +1025,7 @@ def main():
             results.append(message)
             
             # Update overall progress for completed file
-            overall_progress.progress((i + 1) / len(uploaded_files))
+            overall_progress.progress(min((i + 1) / len(uploaded_files), 1.0))
             file_progress.progress(1.0)
             
             # Clean up temp input (keep verification copy)
