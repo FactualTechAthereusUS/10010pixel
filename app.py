@@ -631,8 +631,8 @@ class VideoProcessor:
             def update_progress(step_name: str, step_progress: float = 1.0):
                 nonlocal current_step
                 if progress_callback:
-                    overall_progress = (current_step + step_progress) / total_steps
-                    progress_callback(step_name, overall_progress * 100, current_step + 1, total_steps)
+                    overall_progress = min((current_step + step_progress) / total_steps, 1.0)
+                    progress_callback(step_name, min(overall_progress * 100, 100.0), current_step + 1, total_steps)
                 if step_progress >= 1.0:
                     current_step += 1
             
