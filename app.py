@@ -875,42 +875,56 @@ class VideoVerifier:
     @staticmethod
     def auto_verify_last_processed(processor: VideoProcessor) -> Optional[dict]:
         """Automatically verify the most recently processed video"""
-        input_dir = processor.input_dir
         output_dir = processor.output_dir
         temp_dir = processor.temp_dir
         
-        # Look for verification files (saved during upload)
+        # Find the most recent output file (this is definitely the last processed)
+        output_files = list(output_dir.glob("*.mp4"))
+        if not output_files:
+            return None
+            
+        latest_output = max(output_files, key=lambda x: x.stat().st_mtime)
+        output_time = latest_output.stat().st_mtime
+        
+        # Look for verification files created around the same time as the output
         verification_files = list(temp_dir.glob("verification_*"))
         
-        # Also look for recent temp input files
+        # Find verification file with closest timestamp to the output
+        best_input = None
+        min_time_diff = float('inf')
+        
+        for verification_file in verification_files:
+            time_diff = abs(verification_file.stat().st_mtime - output_time)
+            if time_diff < min_time_diff and time_diff < 3600:  # Within 1 hour
+                min_time_diff = time_diff
+                best_input = verification_file
+        
+        # If we found a matching verification file, use it
+        if best_input:
+            return VideoVerifier.compare_videos(str(best_input), str(latest_output))
+        
+        # Fallback: look for temp input files
         temp_inputs = list(temp_dir.glob("input_*"))
+        for temp_input in temp_inputs:
+            time_diff = abs(temp_input.stat().st_mtime - output_time)
+            if time_diff < min_time_diff and time_diff < 3600:
+                min_time_diff = time_diff
+                best_input = temp_input
         
-        all_input_candidates = verification_files + temp_inputs
+        if best_input:
+            return VideoVerifier.compare_videos(str(best_input), str(latest_output))
         
-        if all_input_candidates:
-            # Find the most recent input file
-            latest_input = max(all_input_candidates, key=lambda x: x.stat().st_mtime)
-            
-            # Find the most recent output file
-            output_files = list(output_dir.glob("*.mp4"))
-            if output_files:
-                latest_output = max(output_files, key=lambda x: x.stat().st_mtime)
-                
-                # Only compare if they were created within 10 minutes of each other
-                input_time = latest_input.stat().st_mtime
-                output_time = latest_output.stat().st_mtime
-                
-                if abs(input_time - output_time) < 600:  # 10 minutes
-                    return VideoVerifier.compare_videos(str(latest_input), str(latest_output))
-        
-        # Fallback: compare any input with latest output
+        # Last resort: use any input file but warn user
+        from pathlib import Path
+        input_dir = Path("input")
         input_files = list(input_dir.glob("*.*"))
-        output_files = list(output_dir.glob("*.mp4"))
-        
-        if input_files and output_files:
-            # Use the first input file and latest output file
-            latest_output = max(output_files, key=lambda x: x.stat().st_mtime)
-            return VideoVerifier.compare_videos(str(input_files[0]), str(latest_output))
+        if input_files:
+            # Use the most recent input file
+            latest_input = max(input_files, key=lambda x: x.stat().st_mtime)
+            comparison = VideoVerifier.compare_videos(str(latest_input), str(latest_output))
+            # Add a warning flag
+            comparison['verification_warning'] = f"Using input file {latest_input.name} - may not match the processed output"
+            return comparison
         
         return None
 
@@ -1035,9 +1049,19 @@ def main():
                 f.write(uploaded_file.getbuffer())
             
             # Also save a copy for verification (with timestamp to avoid conflicts)
-            verification_input = processor.temp_dir / f"verification_{int(time.time())}_{uploaded_file.name}"
+            current_timestamp = int(time.time())
+            verification_input = processor.temp_dir / f"verification_{current_timestamp}_{uploaded_file.name}"
             with open(verification_input, "wb") as f:
                 f.write(uploaded_file.getbuffer())
+            
+            # Store this session's verification mapping for accurate tracking
+            if 'current_session_inputs' not in st.session_state:
+                st.session_state.current_session_inputs = []
+            st.session_state.current_session_inputs.append({
+                'timestamp': current_timestamp,
+                'filename': uploaded_file.name,
+                'verification_path': str(verification_input)
+            })
             
             # Progress callback for individual video processing
             def update_processing_progress(step_name: str, percentage: float, current_step: int, total_steps: int):
@@ -1148,6 +1172,11 @@ def main():
     if verify_button:
         with st.spinner("🔍 Analyzing video changes..."):
             verification = VideoVerifier.auto_verify_last_processed(processor)
+            
+            # Show warning if verification might be inaccurate
+            if verification and 'verification_warning' in verification:
+                st.warning(f"⚠️ {verification['verification_warning']}")
+                st.info("💡 For accurate verification, upload videos through the interface above before processing.")
             
             if verification:
                 # Display terminal-like verification results
