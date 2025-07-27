@@ -334,7 +334,7 @@ class VideoProcessor:
         return processed_frames
     
     def add_pixel_noise(self, input_path: str, output_path: str, noise_intensity: int = 2, progress_callback: Optional[Callable] = None) -> bool:
-        """Add invisible pixel noise using optimized vectorized operations with progress tracking"""
+        """Add invisible pixel noise using optimized vectorized operations with progress tracking and AUDIO PRESERVATION"""
         try:
             cap = cv2.VideoCapture(input_path)
             
@@ -344,9 +344,12 @@ class VideoProcessor:
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             
-            # Create VideoWriter
+            # Create temporary video-only file for OpenCV processing
+            temp_video_only = str(self.temp_dir / f"temp_video_only_{int(time.time())}.mp4")
+            
+            # Create VideoWriter for video-only processing
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            out = cv2.VideoWriter(temp_video_only, fourcc, fps, (width, height))
             
             # Process frames in batches for speed
             batch_size = min(30, max(10, self.max_threads * 2))  # Adaptive batch size
@@ -394,7 +397,26 @@ class VideoProcessor:
             
             cap.release()
             out.release()
-            return True
+            
+            # Now combine the processed video with the original audio using FFmpeg
+            cmd = [
+                'ffmpeg', '-i', temp_video_only,  # Processed video (no audio)
+                '-i', input_path,                 # Original video (with audio)
+                '-c:v', 'copy',                   # Copy processed video as-is
+                '-c:a', 'copy',                   # Copy original audio as-is
+                '-map', '0:v:0',                  # Take video from first input
+                '-map', '1:a:0',                  # Take audio from second input
+                '-shortest',                      # Match shortest stream duration
+                '-y', output_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            # Clean up temporary file
+            if os.path.exists(temp_video_only):
+                os.unlink(temp_video_only)
+            
+            return result.returncode == 0
             
         except Exception as e:
             st.error(f"Pixel noise addition failed: {e}")
