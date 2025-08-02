@@ -24,8 +24,8 @@ import base64
 
 # Multi-platform deployment compatibility  
 def ensure_port_binding():
-    """Ensure proper port binding for Railway/DigitalOcean deployment"""
-    # DigitalOcean uses 8080, Railway uses 8501
+    """Ensure proper port binding for Railway/DigitalOcean/Droplet deployment"""
+    # Get port from environment (8080 for App Platform, 8501 for Droplet/Railway)
     port = os.environ.get("PORT", "8501")
     
     # Set Streamlit server configuration
@@ -33,8 +33,11 @@ def ensure_port_binding():
     os.environ["STREAMLIT_SERVER_ADDRESS"] = "0.0.0.0"
     
     # Platform detection for optimizations
-    if "DIGITALOCEAN" in os.environ or port == "8080":
-        # DigitalOcean optimizations
+    if os.environ.get("PLATFORM") == "droplet":
+        # DigitalOcean Droplet - maximum performance
+        os.environ["PLATFORM"] = "droplet"
+    elif "DIGITALOCEAN" in os.environ or port == "8080":
+        # DigitalOcean App Platform
         os.environ["PLATFORM"] = "digitalocean"
     else:
         # Railway or local
@@ -47,8 +50,14 @@ ensure_port_binding()
 def validate_upload_file(uploaded_file) -> tuple[bool, str]:
     """Validate uploaded file before processing"""
     try:
-        # Check file size (DigitalOcean App Platform realistic limits)
-        max_size_mb = 100  # App Platform 60-second timeout limits uploads to ~100MB
+        # Check file size - platform-aware limits
+        platform = os.environ.get("PLATFORM", "railway")
+        if platform == "droplet":
+            max_size_mb = 1000  # Droplet can handle very large files with full server control
+        elif platform == "digitalocean":
+            max_size_mb = 500   # App Platform has good limits but timeout constraints
+        else:
+            max_size_mb = 200   # Railway/other platforms are more limited
         file_size_mb = uploaded_file.size / (1024 * 1024)
         
         if file_size_mb > max_size_mb:
@@ -500,11 +509,14 @@ class VideoProcessor:
         
         # Platform-optimized thread count
         platform = os.environ.get("PLATFORM", "railway")
-        if platform == "digitalocean":
-            # DigitalOcean has more memory/CPU, can use more threads
+        if platform == "droplet":
+            # DigitalOcean Droplet - maximum performance, full server control
+            self.max_threads = min(8, (os.cpu_count() or 4))  # Use all available cores
+        elif platform == "digitalocean":
+            # DigitalOcean App Platform - good performance but shared infrastructure  
             self.max_threads = min(6, (os.cpu_count() or 4))
         else:
-            # Railway - conservative thread count
+            # Railway - conservative thread count for shared hosting
             self.max_threads = min(4, (os.cpu_count() or 2))
         
         # Color preservation system
@@ -643,7 +655,12 @@ class VideoProcessor:
             platform = os.environ.get("PLATFORM", "railway")
             
             # Set memory limit based on platform
-            memory_limit_mb = 1500 if platform == "digitalocean" else 500  # DigitalOcean has more RAM
+            if platform == "droplet":
+                memory_limit_mb = 3000  # Droplet with 4-8GB RAM can handle much larger videos
+            elif platform == "digitalocean":
+                memory_limit_mb = 1500  # App Platform has good but limited RAM
+            else:
+                memory_limit_mb = 500   # Railway/other platforms are more limited
             
             if estimated_memory_mb > memory_limit_mb:
                 st.warning(f"Video too large for pixel noise processing ({estimated_memory_mb:.0f}MB estimated, limit: {memory_limit_mb}MB). Skipping this step.")
@@ -1238,7 +1255,9 @@ def main():
         query_params = st.query_params
         if query_params.get('health') == 'check':
             st.success("✅ App is healthy and ready")
-            st.json({"status": "healthy", "upload_limit": "500MB", "platform": "digitalocean"})
+            platform = os.environ.get("PLATFORM", "unknown")
+            upload_limit = "1000MB" if platform == "droplet" else "500MB"
+            st.json({"status": "healthy", "upload_limit": upload_limit, "platform": platform})
             st.stop()
     
     # Simple header
@@ -1246,8 +1265,16 @@ def main():
     st.title("🎬 TikTok Video Processor")
     st.markdown("Create unique digital fingerprints to avoid duplicate content detection")
     
-    # Show upload limits and system info
-    st.info("📋 **Upload Limits**: Max 100MB per file | Supported: MP4, AVI, MOV, MKV, WEBM | Use URL method for larger files")
+    # Show upload limits and system info - platform-aware
+    platform = os.environ.get("PLATFORM", "railway")
+    if platform == "droplet":
+        upload_msg = "📋 **Upload Limits**: Max 1000MB per file | Supported: MP4, AVI, MOV, MKV, WEBM | Full server control = larger files supported"
+    elif platform == "digitalocean":
+        upload_msg = "📋 **Upload Limits**: Max 500MB per file | Supported: MP4, AVI, MOV, MKV, WEBM | Use URL method for larger files"
+    else:
+        upload_msg = "📋 **Upload Limits**: Max 200MB per file | Supported: MP4, AVI, MOV, MKV, WEBM"
+    
+    st.info(upload_msg)
     
     processor = VideoProcessor()
     
