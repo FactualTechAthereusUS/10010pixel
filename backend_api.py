@@ -23,9 +23,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-# Import video processing classes from original app
-import sys
-sys.path.append('.')
+# Video processing imports
+# Removed sys.path.append to avoid path issues
 
 # Set platform environment for optimizations
 os.environ["PLATFORM"] = "digitalocean"
