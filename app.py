@@ -1369,51 +1369,7 @@ def main():
                 st.info("No files selected")
                 st.caption("Upload videos to see statistics")
     
-    # Cloud storage URL method for large files
-    st.markdown("### 🌐 **Process Large Files via URL (Bypass Upload Limits)**")
-    
-    # URL input for large files
-    file_url = st.text_input(
-        "📎 **Paste video file URL** (Google Drive, Dropbox, direct links)",
-        placeholder="https://drive.google.com/file/d/... or https://dropbox.com/...",
-        help="Upload your large video to cloud storage and paste the download link here"
-    )
-    
-    if file_url and st.button("🔗 Process from URL", type="secondary", use_container_width=True):
-        if file_url.startswith(("http://", "https://")):
-            st.info("🌐 **URL Processing**: Starting download and processing...")
-            st.warning("⚠️ **Note**: URL processing is experimental. For best results, use direct upload for files <100MB.")
-            # Here we could implement URL download and processing
-            # For now, just show instructions
-            st.markdown("""
-            **URL Processing Steps:**
-            1. ✅ URL validated
-            2. 🔄 Downloading file from cloud storage...
-            3. 📁 Processing video...
-            4. ⚡ Applying transformations...
-            5. 📥 Ready for download
-            
-            **This feature is under development. Use direct upload for reliable processing.**
-            """)
-        else:
-            st.error("❌ Please provide a valid HTTP/HTTPS URL")
-    
-    # Info about platform limitations
-    with st.expander("ℹ️ Why URL Method for Large Files?", expanded=False):
-        st.markdown("""
-        **DigitalOcean App Platform Limitations:**
-        
-        ❌ **60-second timeout** (hardcoded, cannot be changed)  
-        ❌ **Cloudflare proxy** adds additional limits  
-        ❌ **No configuration** can override platform timeouts  
-        
-        **Solutions:**
-        1. **Files <100MB**: Use direct upload (works perfectly)
-        2. **Files >100MB**: Use URL method or split videos
-        3. **Best experience**: Keep videos under 100MB when possible
-        
-        **This is a platform infrastructure limitation, not an app bug.**
-        """)
+
     
     if uploaded_files and st.button("🚀 Start Processing", type="primary", use_container_width=True):
         # Validate all files first
