@@ -595,6 +595,8 @@ class VideoProcessor:
                 'ffmpeg', '-i', input_path,
                 '-map_metadata', '-1',
                 '-c', 'copy',
+                '-avoid_negative_ts', 'make_zero',  # Faster sync
+                '-fflags', '+genpts',               # Generate timestamps efficiently  
                 '-threads', str(self.max_threads),
                 '-y', output_path
             ]
@@ -687,8 +689,12 @@ class VideoProcessor:
                 st.error("Failed to open video writer for pixel noise processing")
                 return False
             
-            # Process frames in optimized batches based on core count
-            if self.max_threads <= 2:
+            # Process frames in optimized batches based on core count and video size
+            if total_frames < 100:
+                # Small videos: reduce overhead with larger batches and less threading
+                batch_size = min(total_frames, 32)
+                use_threading = total_frames > 50 and self.max_threads >= 4
+            elif self.max_threads <= 2:
                 # Small batches for 2-core systems
                 batch_size = 8
                 use_threading = True
@@ -789,6 +795,7 @@ class VideoProcessor:
             out.release()
             
             # Now combine the processed video with the original audio using FFmpeg
+            # OPTIMIZED: Use faster copy codec and reduce overhead
             cmd = [
                 'ffmpeg', '-i', temp_video_only,  # Processed video (no audio)
                 '-i', input_path,                 # Original video (with audio)
@@ -797,6 +804,8 @@ class VideoProcessor:
                 '-map', '0:v:0',                  # Take video from first input
                 '-map', '1:a:0',                  # Take audio from second input
                 '-shortest',                      # Match shortest stream duration
+                '-avoid_negative_ts', 'make_zero', # Faster sync
+                '-fflags', '+genpts',             # Generate timestamps efficiently
                 '-y', output_path
             ]
             
@@ -839,12 +848,12 @@ class VideoProcessor:
                     '-y', output_path
                 ]
             else:
-                # Software encoding with COLOR PRESERVATION
+                # Software encoding with COLOR PRESERVATION - SPEED OPTIMIZED
                 cmd = [
                     'ffmpeg', '-i', input_path,
                     '-c:v', 'libx264',
                     '-crf', str(crf),
-                    '-preset', 'medium',
+                    '-preset', 'veryfast',        # Much faster encoding
                     '-tune', 'fastdecode',
                     # CRITICAL: Preserve color with standard settings
                     '-pix_fmt', 'yuv420p',
@@ -852,6 +861,7 @@ class VideoProcessor:
                     '-b:a', '128k',
                     '-movflags', '+faststart',
                     '-threads', str(self.max_threads),
+                    '-x264opts', 'no-scenecut',   # Faster encoding
                     '-progress', 'pipe:1',
                     '-y', output_path
                 ]
