@@ -71,27 +71,45 @@ def validate_upload_file(uploaded_file) -> tuple[bool, str]:
         return False, f"Validation error: {str(e)}"
 
 def safe_file_write(uploaded_file, target_path: Path) -> tuple[bool, str]:
-    """Safely write uploaded file with error handling"""
+    """Safely write uploaded file with error handling and progress tracking"""
     try:
         # Create parent directory if needed
         target_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Write file in chunks to avoid memory issues
-        chunk_size = 1024 * 1024  # 1MB chunks
+        # Get file size for progress tracking
+        file_size = uploaded_file.size
+        file_size_mb = file_size / (1024 * 1024)
+        
+        # Write file in chunks to avoid memory issues and timeouts
+        chunk_size = 2 * 1024 * 1024  # 2MB chunks for faster writing
+        bytes_written = 0
+        
+        print(f"📁 Writing {file_size_mb:.1f}MB file to {target_path}")
         
         with open(target_path, "wb") as f:
             uploaded_file.seek(0)  # Reset file pointer
             
-            while True:
+            while bytes_written < file_size:
+                # Read chunk with progress
                 chunk = uploaded_file.read(chunk_size)
                 if not chunk:
                     break
+                    
                 f.write(chunk)
+                bytes_written += len(chunk)
+                
+                # Log progress for large files
+                if file_size > 50 * 1024 * 1024:  # Only for files > 50MB
+                    progress = (bytes_written / file_size) * 100
+                    print(f"📊 Upload progress: {progress:.1f}% ({bytes_written / (1024*1024):.1f}MB/{file_size_mb:.1f}MB)")
                 
         # Verify file was written correctly
-        if not target_path.exists() or target_path.stat().st_size == 0:
-            return False, "File write verification failed"
+        actual_size = target_path.stat().st_size if target_path.exists() else 0
+        
+        if actual_size != file_size:
+            return False, f"File size mismatch: expected {file_size}, got {actual_size}"
             
+        print(f"✅ File written successfully: {actual_size} bytes")
         return True, "File written successfully"
         
     except MemoryError:
@@ -1215,6 +1233,14 @@ class VideoVerifier:
         return None
 
 def main():
+    # Add health check endpoint for DigitalOcean
+    if hasattr(st, 'query_params'):
+        query_params = st.query_params
+        if query_params.get('health') == 'check':
+            st.success("✅ App is healthy and ready")
+            st.json({"status": "healthy", "upload_limit": "500MB", "platform": "digitalocean"})
+            st.stop()
+    
     # Simple header
     st.title("AURA FARMING")
     st.title("🎬 TikTok Video Processor")

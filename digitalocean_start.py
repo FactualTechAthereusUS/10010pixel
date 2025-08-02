@@ -31,18 +31,27 @@ headless = true
 enableCORS = false
 enableXsrfProtection = false
 maxUploadSize = 500
+maxMessageSize = 500
+fileWatcherType = "none"
+baseUrlPath = ""
 
 [browser]
 gatherUsageStats = false
+serverAddress = "0.0.0.0"
+serverPort = {port}
 
 [theme]
 base = "dark"
+
+[client]
+caching = true
+displayEnabled = true
 """
     
     with open(".streamlit/config.toml", "w") as f:
         f.write(config_content)
     
-    # Build the streamlit command optimized for DigitalOcean
+    # Build the streamlit command optimized for DigitalOcean with large file support
     cmd = [
         "streamlit", "run", "app.py",
         "--server.port", port,
@@ -50,6 +59,9 @@ base = "dark"
         "--server.headless", "true",
         "--server.enableCORS", "false",
         "--server.enableXsrfProtection", "false",
+        "--server.maxUploadSize", "500",
+        "--server.maxMessageSize", "500",
+        "--server.fileWatcherType", "none",
         "--browser.gatherUsageStats", "false"
     ]
     

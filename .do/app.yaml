@@ -13,7 +13,7 @@ services:
   routes:
   - path: /
   health_check:
-    http_path: /
+    http_path: /?health=check
   envs:
   - key: DIGITALOCEAN
     value: "true"
@@ -25,6 +25,12 @@ services:
     value: "false"
   - key: STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION
     value: "false"
+  - key: STREAMLIT_SERVER_MAX_UPLOAD_SIZE
+    value: "500"
+  - key: STREAMLIT_SERVER_MAX_MESSAGE_SIZE
+    value: "500"
+  - key: STREAMLIT_SERVER_FILE_WATCHER_TYPE
+    value: "none"
 
 # Instance sizes available:
 # basic-xxs: $5/month  (512MB RAM, 1 vCPU) - Too small for video processing
