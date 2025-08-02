@@ -18,13 +18,23 @@ from typing import List, Tuple, Optional, Dict, Callable
 from datetime import datetime, timedelta
 import base64
 
-# Railway deployment compatibility
+# Multi-platform deployment compatibility  
 def ensure_port_binding():
-    """Ensure proper port binding for Railway deployment"""
+    """Ensure proper port binding for Railway/DigitalOcean deployment"""
+    # DigitalOcean uses 8080, Railway uses 8501
     port = os.environ.get("PORT", "8501")
-    # Set Streamlit server configuration for Railway
+    
+    # Set Streamlit server configuration
     os.environ["STREAMLIT_SERVER_PORT"] = port
     os.environ["STREAMLIT_SERVER_ADDRESS"] = "0.0.0.0"
+    
+    # Platform detection for optimizations
+    if "DIGITALOCEAN" in os.environ or port == "8080":
+        # DigitalOcean optimizations
+        os.environ["PLATFORM"] = "digitalocean"
+    else:
+        # Railway or local
+        os.environ["PLATFORM"] = "railway"
 
 # Call port binding setup
 ensure_port_binding()
@@ -34,7 +44,7 @@ def validate_upload_file(uploaded_file) -> tuple[bool, str]:
     """Validate uploaded file before processing"""
     try:
         # Check file size (Railway-friendly limits)
-        max_size_mb = 100  # Conservative limit for Railway
+        max_size_mb = 200  # Increased limit - Railway can handle more with optimization
         file_size_mb = uploaded_file.size / (1024 * 1024)
         
         if file_size_mb > max_size_mb:
@@ -465,7 +475,15 @@ class VideoProcessor:
         
         # Detect hardware acceleration capabilities
         self.hardware_encoder = self._detect_hardware_encoder()
-        self.max_threads = min(4, (os.cpu_count() or 2))  # Reduced threads for Railway memory limits
+        
+        # Platform-optimized thread count
+        platform = os.environ.get("PLATFORM", "railway")
+        if platform == "digitalocean":
+            # DigitalOcean has more memory/CPU, can use more threads
+            self.max_threads = min(6, (os.cpu_count() or 4))
+        else:
+            # Railway - conservative thread count
+            self.max_threads = min(4, (os.cpu_count() or 2))
         
         # Color preservation system
         self.color_properties_cache = {}
@@ -588,10 +606,15 @@ class VideoProcessor:
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             
-            # Memory safety check - skip if video is too large for current resources
+            # Memory safety check - platform-aware limits
             estimated_memory_mb = (width * height * 3 * 30) / (1024 * 1024)  # 30 frames in memory
-            if estimated_memory_mb > 500:  # 500MB limit
-                st.warning(f"Video too large for pixel noise processing ({estimated_memory_mb:.0f}MB estimated). Skipping this step.")
+            platform = os.environ.get("PLATFORM", "railway")
+            
+            # Set memory limit based on platform
+            memory_limit_mb = 1500 if platform == "digitalocean" else 500  # DigitalOcean has more RAM
+            
+            if estimated_memory_mb > memory_limit_mb:
+                st.warning(f"Video too large for pixel noise processing ({estimated_memory_mb:.0f}MB estimated, limit: {memory_limit_mb}MB). Skipping this step.")
                 # Just copy the file instead
                 import shutil
                 shutil.copy2(input_path, output_path)
@@ -1184,7 +1207,7 @@ def main():
     st.markdown("Create unique digital fingerprints to avoid duplicate content detection")
     
     # Show upload limits and system info
-    st.info("📋 **Upload Limits**: Max 100MB per file | Supported: MP4, AVI, MOV, MKV, WEBM | Optimized for Railway deployment")
+    st.info("📋 **Upload Limits**: Max 200MB per file | Supported: MP4, AVI, MOV, MKV, WEBM")
     
     processor = VideoProcessor()
     

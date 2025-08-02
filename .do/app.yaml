@@ -1,0 +1,33 @@
+name: aura-farming-video-processor
+services:
+- name: web
+  source_dir: /
+  github:
+    repo: FactualTechAthereusUS/v1pixel-
+    branch: main
+    deploy_on_push: true
+  run_command: python digitalocean_start.py
+  environment_slug: python
+  instance_count: 1
+  instance_size_slug: professional-s
+  http_port: 8080
+  routes:
+  - path: /
+  health_check:
+    http_path: /
+  envs:
+  - key: STREAMLIT_SERVER_HEADLESS
+    value: "true"
+  - key: STREAMLIT_SERVER_ENABLE_CORS
+    value: "false"
+  - key: STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION
+    value: "false"
+
+# Instance sizes available:
+# basic-xxs: $5/month  (512MB RAM, 1 vCPU) - Too small for video processing
+# basic-xs:  $12/month (1GB RAM, 1 vCPU)   - Minimal video processing
+# basic-s:   $24/month (2GB RAM, 1 vCPU)   - Good for small videos
+# professional-xs: $12/month (1GB RAM, 1 vCPU)   - Better CPU
+# professional-s:  $24/month (2GB RAM, 1 vCPU)   - Recommended for most videos
+# professional-m:  $48/month (4GB RAM, 2 vCPU)   - Large videos (500MB+)
+# professional-l:  $96/month (8GB RAM, 4 vCPU)   - Very large videos (1GB+)
