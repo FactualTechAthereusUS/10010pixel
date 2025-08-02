@@ -47,8 +47,8 @@ ensure_port_binding()
 def validate_upload_file(uploaded_file) -> tuple[bool, str]:
     """Validate uploaded file before processing"""
     try:
-        # Check file size (Railway-friendly limits)
-        max_size_mb = 200  # Increased limit - Railway can handle more with optimization
+        # Check file size (DigitalOcean-optimized limits)
+        max_size_mb = 500  # DigitalOcean dedicated CPU can handle large files
         file_size_mb = uploaded_file.size / (1024 * 1024)
         
         if file_size_mb > max_size_mb:
@@ -1221,7 +1221,7 @@ def main():
     st.markdown("Create unique digital fingerprints to avoid duplicate content detection")
     
     # Show upload limits and system info
-    st.info("📋 **Upload Limits**: Max 200MB per file | Supported: MP4, AVI, MOV, MKV, WEBM")
+    st.info("📋 **Upload Limits**: Max 500MB per file | Supported: MP4, AVI, MOV, MKV, WEBM")
     
     processor = VideoProcessor()
     

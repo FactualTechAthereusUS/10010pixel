@@ -30,7 +30,7 @@ address = "0.0.0.0"
 headless = true
 enableCORS = false
 enableXsrfProtection = false
-maxUploadSize = 200
+maxUploadSize = 500
 
 [browser]
 gatherUsageStats = false
@@ -56,7 +56,7 @@ base = "dark"
     print(f"🚀 Starting Streamlit on DigitalOcean (port {port})...")
     print(f"📍 Command: {' '.join(cmd)}")
     print(f"💾 Available memory: Better than Railway!")
-    print(f"📁 Max upload size: 200MB")
+    print(f"📁 Max upload size: 500MB")
     
     # Start the app
     try:
