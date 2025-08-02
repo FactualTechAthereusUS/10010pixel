@@ -516,7 +516,7 @@ class VideoProcessor:
             if cpu_cores <= 2:
                 self.max_threads = 2  # Conservative for 2-core systems
             elif cpu_cores <= 4:
-                self.max_threads = min(4, cpu_cores)
+                self.max_threads = 4  # Aggressive threading for 4-core systems
             else:
                 self.max_threads = min(8, cpu_cores)
         elif platform == "digitalocean":
@@ -687,14 +687,18 @@ class VideoProcessor:
                 st.error("Failed to open video writer for pixel noise processing")
                 return False
             
-            # Process frames in optimized batches for 2-core systems
+            # Process frames in optimized batches based on core count
             if self.max_threads <= 2:
                 # Small batches for 2-core systems
                 batch_size = 8
                 use_threading = True
+            elif self.max_threads == 4:
+                # Larger batches for 4-core systems (maximum performance)
+                batch_size = 16
+                use_threading = True
             else:
-                # Larger batches for more cores
-                batch_size = min(10, max(5, self.max_threads))
+                # Even larger batches for 8+ core systems
+                batch_size = min(20, max(10, self.max_threads * 2))
                 use_threading = True
             
             frame_batch = []
@@ -714,18 +718,37 @@ class VideoProcessor:
                     if len(frame_batch) >= batch_size:
                         if use_threading and self.max_threads >= 2:
                             # Use threading for better performance on multi-core systems
-                            with ThreadPoolExecutor(max_workers=min(2, self.max_threads)) as executor:
-                                # Split batch for parallel processing
-                                mid = len(frame_batch) // 2
-                                batch1 = frame_batch[:mid]
-                                batch2 = frame_batch[mid:]
-                                
-                                future1 = executor.submit(self._process_frame_batch, batch1, noise_intensity)
-                                future2 = executor.submit(self._process_frame_batch, batch2, noise_intensity)
-                                
-                                processed1 = future1.result()
-                                processed2 = future2.result()
-                                processed_frames = processed1 + processed2
+                            workers = min(4, self.max_threads)  # Use all available cores
+                            with ThreadPoolExecutor(max_workers=workers) as executor:
+                                # Split batch for parallel processing across all cores
+                                if workers == 4:
+                                    # Split into 4 parts for 4-core processing
+                                    chunk_size = len(frame_batch) // 4
+                                    batches = [
+                                        frame_batch[i:i + chunk_size] 
+                                        for i in range(0, len(frame_batch), chunk_size)
+                                    ]
+                                    # Handle remainder
+                                    if len(batches) > 4:
+                                        batches[3].extend(batches[4])
+                                        batches = batches[:4]
+                                    
+                                    futures = [executor.submit(self._process_frame_batch, batch, noise_intensity) for batch in batches]
+                                    processed_frames = []
+                                    for future in futures:
+                                        processed_frames.extend(future.result())
+                                else:
+                                    # Split batch for 2-core processing
+                                    mid = len(frame_batch) // 2
+                                    batch1 = frame_batch[:mid]
+                                    batch2 = frame_batch[mid:]
+                                    
+                                    future1 = executor.submit(self._process_frame_batch, batch1, noise_intensity)
+                                    future2 = executor.submit(self._process_frame_batch, batch2, noise_intensity)
+                                    
+                                    processed1 = future1.result()
+                                    processed2 = future2.result()
+                                    processed_frames = processed1 + processed2
                         else:
                             # Single-threaded processing for very limited systems
                             processed_frames = self._process_frame_batch(frame_batch, noise_intensity)
