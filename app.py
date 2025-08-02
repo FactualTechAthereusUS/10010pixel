@@ -689,22 +689,23 @@ class VideoProcessor:
                 st.error("Failed to open video writer for pixel noise processing")
                 return False
             
-            # Process frames in optimized batches based on core count and video size
+            # Process frames in memory-efficient batches
+            # FIXED: Reduced batch sizes to prevent memory leaks
             if total_frames < 100:
-                # Small videos: reduce overhead with larger batches and less threading
-                batch_size = min(total_frames, 32)
-                use_threading = total_frames > 50 and self.max_threads >= 4
+                # Small videos: process with minimal memory footprint
+                batch_size = min(total_frames // 4, 8)  # Much smaller batches
+                use_threading = False  # Disable threading for small videos
             elif self.max_threads <= 2:
                 # Small batches for 2-core systems
-                batch_size = 8
+                batch_size = 4  # Reduced from 8
                 use_threading = True
             elif self.max_threads == 4:
-                # Larger batches for 4-core systems (maximum performance)
-                batch_size = 16
+                # Medium batches for 4-core systems - MEMORY OPTIMIZED
+                batch_size = 6  # Reduced from 16 to prevent memory leaks
                 use_threading = True
             else:
-                # Even larger batches for 8+ core systems
-                batch_size = min(20, max(10, self.max_threads * 2))
+                # Conservative batches for 8+ core systems
+                batch_size = 8  # Much more conservative
                 use_threading = True
             
             frame_batch = []
@@ -770,8 +771,15 @@ class VideoProcessor:
                             progress = min(frames_processed / total_frames, 1.0)
                             progress_callback(min(progress, 1.0))
                         
-                        # Clear batch to free memory
+                        # CRITICAL: Explicit memory cleanup to prevent leaks
                         frame_batch.clear()
+                        processed_frames.clear() if isinstance(processed_frames, list) else None
+                        del processed_frames
+                        
+                        # Force garbage collection every few batches to free memory
+                        if frames_processed % 30 == 0:
+                            import gc
+                            gc.collect()
                 
                 # Process remaining frames
                 if frame_batch:
