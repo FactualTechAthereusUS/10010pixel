@@ -509,15 +509,22 @@ class VideoProcessor:
         
         # Platform-optimized thread count
         platform = os.environ.get("PLATFORM", "railway")
+        cpu_cores = os.cpu_count() or 2
+        
         if platform == "droplet":
-            # DigitalOcean Droplet - maximum performance, full server control
-            self.max_threads = min(8, (os.cpu_count() or 4))  # Use all available cores
+            # DigitalOcean Droplet - optimize based on actual core count
+            if cpu_cores <= 2:
+                self.max_threads = 2  # Conservative for 2-core systems
+            elif cpu_cores <= 4:
+                self.max_threads = min(4, cpu_cores)
+            else:
+                self.max_threads = min(8, cpu_cores)
         elif platform == "digitalocean":
             # DigitalOcean App Platform - good performance but shared infrastructure  
-            self.max_threads = min(6, (os.cpu_count() or 4))
+            self.max_threads = min(6, cpu_cores)
         else:
             # Railway - conservative thread count for shared hosting
-            self.max_threads = min(4, (os.cpu_count() or 2))
+            self.max_threads = min(4, max(2, cpu_cores))
         
         # Color preservation system
         self.color_properties_cache = {}
@@ -680,12 +687,21 @@ class VideoProcessor:
                 st.error("Failed to open video writer for pixel noise processing")
                 return False
             
-            # Process frames in smaller batches for memory efficiency
-            batch_size = min(10, max(5, self.max_threads))  # Smaller batches for memory safety
+            # Process frames in optimized batches for 2-core systems
+            if self.max_threads <= 2:
+                # Small batches for 2-core systems
+                batch_size = 8
+                use_threading = True
+            else:
+                # Larger batches for more cores
+                batch_size = min(10, max(5, self.max_threads))
+                use_threading = True
+            
             frame_batch = []
             frames_processed = 0
             
-            # Process without thread pool to reduce memory overhead
+            # Use optimized threading for better performance
+            from concurrent.futures import ThreadPoolExecutor
             try:
                 while True:
                     ret, frame = cap.read()
@@ -696,8 +712,23 @@ class VideoProcessor:
                     
                     # Process batch when full or at end
                     if len(frame_batch) >= batch_size:
-                        # Process batch directly (no threading for memory safety)
-                        processed_frames = self._process_frame_batch(frame_batch, noise_intensity)
+                        if use_threading and self.max_threads >= 2:
+                            # Use threading for better performance on multi-core systems
+                            with ThreadPoolExecutor(max_workers=min(2, self.max_threads)) as executor:
+                                # Split batch for parallel processing
+                                mid = len(frame_batch) // 2
+                                batch1 = frame_batch[:mid]
+                                batch2 = frame_batch[mid:]
+                                
+                                future1 = executor.submit(self._process_frame_batch, batch1, noise_intensity)
+                                future2 = executor.submit(self._process_frame_batch, batch2, noise_intensity)
+                                
+                                processed1 = future1.result()
+                                processed2 = future2.result()
+                                processed_frames = processed1 + processed2
+                        else:
+                            # Single-threaded processing for very limited systems
+                            processed_frames = self._process_frame_batch(frame_batch, noise_intensity)
                         
                         # Write processed frames immediately
                         for processed_frame in processed_frames:
