@@ -3,11 +3,10 @@ services:
 - name: web
   source_dir: /
   github:
-    repo: FactualTechAthereusUS/removeurpixel
+    repo: FactualTechAthereusUS/10010pixel
     branch: main
     deploy_on_push: true
-  run_command: python digitalocean_start.py
-  environment_slug: python
+  dockerfile_path: Dockerfile.digitalocean
   instance_count: 1
   instance_size_slug: professional-s
   http_port: 8080
@@ -16,6 +15,10 @@ services:
   health_check:
     http_path: /
   envs:
+  - key: DIGITALOCEAN
+    value: "true"
+  - key: PLATFORM
+    value: "digitalocean"
   - key: STREAMLIT_SERVER_HEADLESS
     value: "true"
   - key: STREAMLIT_SERVER_ENABLE_CORS

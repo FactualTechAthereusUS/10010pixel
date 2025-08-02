@@ -1,6 +1,10 @@
 import streamlit as st
 import os
-import cv2
+try:
+    import cv2
+except ImportError as e:
+    st.error(f"OpenCV not available: {e}. Please ensure opencv-python is properly installed.")
+    st.stop()
 import numpy as np
 import subprocess
 import random
@@ -494,17 +498,27 @@ class VideoProcessor:
     def _detect_hardware_encoder(self) -> str:
         """Detect the best available hardware encoder for the current system"""
         try:
+            # Check if FFmpeg is available first
+            result = subprocess.run(['ffmpeg', '-version'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode != 0:
+                raise Exception("FFmpeg not found")
+            
             # Check if VideoToolbox is available (Mac M1/M2/Intel with hardware support)
             if platform.system() == "Darwin":
-                result = subprocess.run(['ffmpeg', '-hide_banner', '-encoders'], 
-                                      capture_output=True, text=True)
-                if 'h264_videotoolbox' in result.stdout:
+                encoder_result = subprocess.run(['ffmpeg', '-hide_banner', '-encoders'], 
+                                      capture_output=True, text=True, timeout=10)
+                if 'h264_videotoolbox' in encoder_result.stdout:
                     return 'h264_videotoolbox'
             
             # Fallback to software encoder
             return 'libx264'
-        except:
+        except subprocess.TimeoutExpired:
+            st.error("FFmpeg detection timed out. Using fallback encoder.")
             return 'libx264'
+        except Exception as e:
+            st.error(f"FFmpeg not available: {e}. Please ensure FFmpeg is installed on the system.")
+            st.stop()  # Stop the app if FFmpeg is not available
     
     def cleanup_old_verification_files(self):
         """Remove old verification files to prevent temp directory buildup"""
